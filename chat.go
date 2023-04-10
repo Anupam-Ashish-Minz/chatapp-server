@@ -32,8 +32,9 @@ func messageListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(`select id, time, body, user_id from messages where
-		chatroom_id = ?`, roomID)
+	rows, err := db.Query(`select messages.id, time, body, user_id, users.id,
+		users.name, users.email from messages inner join users on user_id =
+		users.id where chatroom_id = ?`, roomID)
 	defer rows.Close()
 	if err != nil {
 		log.Println(err)
@@ -44,7 +45,8 @@ func messageListHandler(w http.ResponseWriter, r *http.Request) {
 	var messages []Message
 	for rows.Next() {
 		var message Message
-		rows.Scan(&message.ID, &message.Body, &message.UserID)
+		rows.Scan(&message.ID, &message.Time, &message.Body, &message.UserID,
+			&message.User.ID, &message.User.Name, &message.User.Email)
 		message.ChatroomID = roomID
 
 		messages = append(messages, message)

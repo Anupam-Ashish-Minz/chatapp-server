@@ -27,6 +27,7 @@ type Message struct {
 	Time       string `json:"time"`
 	UserID     int    `json:"user_id"`
 	ChatroomID int    `json:"chatroom_id"`
+	User       User   `json:"user,omitempty"`
 }
 
 type Chatroom struct {
