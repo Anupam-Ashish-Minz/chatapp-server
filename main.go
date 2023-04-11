@@ -1,9 +1,11 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	_ "github.com/mattn/go-sqlite3"
+	"nhooyr.io/websocket"
 
 	"github.com/rs/cors"
 )
@@ -44,6 +46,46 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("the api is working"))
 }
 
+func wsMessageHandler(w http.ResponseWriter, r *http.Request) {
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
+	defer c.Close(websocket.StatusGoingAway, "websocket closed")
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		log.Println(err)
+		return
+	}
+
+	// using timeout might be a good idea but in the client add a method
+	// such that it will reconnect the client is the user gain activity back
+	// though not having notification because of a non active websocket
+	// connection seems annoying so indefinited websocket connection does not
+	// seem that bad after all
+	//
+	// ctx, cancel := context.WithTimeout(r.Context(), time.Hour*10)
+	// defer cancel()
+
+	ctx := r.Context()
+
+	for {
+		mt, msg, err := c.Read(ctx)
+		if err != nil {
+			log.Println(err)
+			break
+		}
+
+		if mt == websocket.MessageText {
+			log.Println(string(msg))
+		} else {
+			log.Println("not a text messages")
+		}
+
+		c.Write(ctx, mt, msg)
+	}
+}
+
 func main() {
 	router := http.NewServeMux()
 
@@ -54,10 +96,12 @@ func main() {
 	router.HandleFunc("/api/auth/login", loginHandler)
 	router.HandleFunc("/api/auth/signup", signupHandler)
 	router.HandleFunc("/api/message", messageHandler)
+	router.HandleFunc("/ws/message", wsMessageHandler)
 
+	// just for testing purposes
 	router.HandleFunc("/api", apiHandler)
 
-	// misc
+	// 404
 	router.HandleFunc("/", notFoundHandler)
 
 	handler := cors.New(cors.Options{
