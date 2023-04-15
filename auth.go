@@ -15,9 +15,7 @@ func createToken(userID int) (string, error) {
 		"user_id": userID,
 	})
 
-	tokenString, err := token.SignedString(JWT_SECRET)
-
-	return tokenString, err
+	return token.SignedString(JWT_SECRET)
 }
 
 func parseToken(tokenString string) (int, error) {
@@ -34,12 +32,21 @@ func parseToken(tokenString string) (int, error) {
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		if userID, ok := claims["user_id"].(int); ok {
-			return userID, nil
+		if userID, ok := claims["user_id"].(float64); ok {
+			return int(userID), nil
 		}
 		return 0, fmt.Errorf("claim user_id is incorrect")
 	}
 	return 0, fmt.Errorf("unknown error")
+}
+
+func validateAuth(r *http.Request) (int, error) {
+	coo, err := r.Cookie(AUTH_COOKIE)
+	if err != nil {
+		return 0, err
+	}
+
+	return parseToken(coo.Value)
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +85,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := createToken(dbUser.ID)
 	if err != nil {
+		log.Println("creating token failed")
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -130,10 +138,12 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := createToken(int(userID))
 	if err != nil {
+		log.Println("creating token failed")
 		log.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
 	cookie := http.Cookie{
 		Name:     AUTH_COOKIE,
 		Value:    tokenString,

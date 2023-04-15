@@ -1,11 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
 
 	"github.com/rs/cors"
 )
@@ -13,8 +16,9 @@ import (
 const (
 	DB_NAME     = "test.db"
 	AUTH_COOKIE = "auth-cookie"
-	JWT_SECRET  = "aseotuasoetu"
 )
+
+var JWT_SECRET = []byte("aseotuasoetu")
 
 type User struct {
 	ID       int    `json:"id,omitempty"`
@@ -37,9 +41,14 @@ type Chatroom struct {
 	Name string `json:"name"`
 }
 
-func notFoundHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotFound)
-	// w.Write([]byte("hi"))
+type MessageWS struct {
+	Body       string `json:"body"`
+	ChatroomID int    `json:"chatroom_id"`
+}
+
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	// w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte("hi"))
 }
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +56,20 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func wsMessageHandler(w http.ResponseWriter, r *http.Request) {
+
+	coo, err := r.Cookie(AUTH_COOKIE)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+
+	tokenString := coo.Value
+	userID, err := parseToken(tokenString)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
@@ -69,32 +92,56 @@ func wsMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	db, err := sql.Open("sqlite3", DB_NAME)
+	defer db.Close()
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	for {
-		mt, msg, err := c.Read(ctx)
+		var message MessageWS
+
+		if err = wsjson.Read(ctx, c, &message); err != nil {
+			log.Println(err)
+			break
+		}
+
+		res, err := db.Exec(`insert into messages (time, body, user_id,
+			chatroom_id) values (?, ?, ?, ?)`, time.Now().Format(time.RFC3339),
+			message.Body, userID, message.ChatroomID)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		id, err := res.LastInsertId()
 		if err != nil {
 			log.Println(err)
 			break
 		}
 
-		if mt == websocket.MessageText {
-			log.Println(string(msg))
-		} else {
-			log.Println("not a text messages")
+		err = wsjson.Write(ctx, c, map[string]interface{}{"id": id})
+		if err != nil {
+			log.Println(err)
+			break
 		}
-
-		c.Write(ctx, mt, msg)
 	}
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	router := http.NewServeMux()
 
 	// get request
 	router.HandleFunc("/api/messages/", messageListHandler)
 	router.HandleFunc("/api/chatrooms", chatroomsHandler)
 	// post request
-	router.HandleFunc("/api/auth/login", loginHandler)
-	router.HandleFunc("/api/auth/signup", signupHandler)
+	router.HandleFunc("/login", loginHandler)
+	router.HandleFunc("/signup", signupHandler)
 	router.HandleFunc("/api/message", messageHandler)
 	router.HandleFunc("/ws/message", wsMessageHandler)
 
@@ -102,7 +149,7 @@ func main() {
 	router.HandleFunc("/api", apiHandler)
 
 	// 404
-	router.HandleFunc("/", notFoundHandler)
+	router.HandleFunc("/", rootHandler)
 
 	handler := cors.New(cors.Options{
 		AllowedOrigins:     []string{"http://localhost:5173"},

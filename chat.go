@@ -11,13 +11,14 @@ import (
 )
 
 func messageListHandler(w http.ResponseWriter, r *http.Request) {
-	roomID_s := strings.TrimPrefix(r.URL.Path, "/api/messages/")
-	if roomID_s == "" {
-		log.Println("room id is empty")
-		w.WriteHeader(http.StatusBadRequest)
+	userID, err := validateAuth(r)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	roomID, err := strconv.Atoi(roomID_s)
+
+	chatroomID, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/api/messages/"))
 	if err != nil {
 		log.Println(err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -32,9 +33,18 @@ func messageListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	row := db.QueryRow(`select user_id from messages where user_id = ? and
+		chatroom_id = ?`, userID, chatroomID)
+	// what is this ? why !?
+	row.Scan(&userID)
+
+	if userID == 0 {
+		return
+	}
+
 	rows, err := db.Query(`select messages.id, time, body, user_id, users.id,
 		users.name, users.email from messages inner join users on user_id =
-		users.id where chatroom_id = ?`, roomID)
+		users.id where chatroom_id = ?`, chatroomID)
 	defer rows.Close()
 	if err != nil {
 		log.Println(err)
@@ -47,7 +57,7 @@ func messageListHandler(w http.ResponseWriter, r *http.Request) {
 		var message Message
 		rows.Scan(&message.ID, &message.Time, &message.Body, &message.UserID,
 			&message.User.ID, &message.User.Name, &message.User.Email)
-		message.ChatroomID = roomID
+		message.ChatroomID = chatroomID
 
 		messages = append(messages, message)
 	}
