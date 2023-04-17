@@ -102,7 +102,6 @@ func wsMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		var message MessageWS
-
 		if err = wsjson.Read(ctx, c, &message); err != nil {
 			log.Println(err)
 			break
@@ -123,11 +122,20 @@ func wsMessageHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		err = wsjson.Write(ctx, c, map[string]interface{}{"id": id})
+		row := db.QueryRow(`select messages.id, time, body, user_id, users.id,
+		users.name, users.email from messages inner join users on user_id =
+		users.id where messages.id = ?`, id)
 		if err != nil {
 			log.Println(err)
-			break
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
+
+		var messageDB Message
+		row.Scan(&messageDB.ID, &messageDB.Time, &messageDB.Body, &messageDB.UserID,
+			&messageDB.User.ID, &messageDB.User.Name, &messageDB.User.Email)
+
+		wsjson.Write(ctx, c, messageDB)
 	}
 }
 
