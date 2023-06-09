@@ -91,6 +91,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO change this from cookie to basic auth
 	cookie := http.Cookie{
 		Name:     AUTH_COOKIE,
 		Value:    tokenString,
@@ -158,4 +159,17 @@ func signupHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"user_id": userID,
 	})
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie := http.Cookie{
+		Name:     AUTH_COOKIE,
+		Value:    "",
+		Path:     "/",
+		Domain:   "localhost",
+		MaxAge:   0,
+		Secure:   true,
+		HttpOnly: true,
+	}
+	http.SetCookie(w, &cookie)
 }
